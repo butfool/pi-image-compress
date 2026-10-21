@@ -1,0 +1,37 @@
+{
+  "name": "pi-image-compress",
+  "version": "1.0.0",
+  "description": "Compress images entering a Pi session to WebP before they are stored in conversation history.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "image",
+    "webp",
+    "vision"
+  ],
+  "files": [
+    "index.ts",
+    "README.md"
+  ],
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "dependencies": {
+    "sharp": "^0.35.5"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "scripts": {
+    "setup": "node tests/setup.mjs",
+    "pretypecheck": "node tests/setup.mjs",
+    "typecheck": "tsc --noEmit -p tests/tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
