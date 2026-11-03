@@ -4,15 +4,15 @@ import sharp from "sharp";
 
 // 扩展是唯一的图片编码器：settings.json 里 images.autoResize 已关闭，
 // 因此 pi 不做任何缩放与编码，原始字节直接到这里。
-const MAX_WIDTH = 1536;
-const MAX_HEIGHT = 2048;
+export const MAX_WIDTH = 1536;
+export const MAX_HEIGHT = 2048;
 
 // base64 长度上限。代理侧 client_max_body_size 是 10M，单幅压到这个量级
 // 才能让一个会话累积几十幅截图仍然通过；压不下来就抛错，让问题暴露。
-const MAX_BASE64_BYTES = 122880;
+export const MAX_BASE64_BYTES = 122880;
 
 // 小图（图标、缩略图）保持原样，避免重编码反而变大。
-const SMALL_BASE64_BYTES = 30720;
+export const SMALL_BASE64_BYTES = 30720;
 
 // 逐级下降直到落在字节上限内；截图类图片通常停在第一档。
 const QUALITIES = [82, 74, 66, 58, 50];
@@ -47,7 +47,7 @@ async function encodeWebp(input: Buffer, width: number, height: number) {
   return null;
 }
 
-interface Compressed {
+export interface Compressed {
   block: ImageContent;
   width: number;
   height: number;
@@ -55,7 +55,7 @@ interface Compressed {
 }
 
 /** 返回 null 表示这张图不需要改动。 */
-async function compress(block: ImageContent): Promise<Compressed | null> {
+export async function compressImage(block: ImageContent): Promise<Compressed | null> {
   const input = Buffer.from(block.data, "base64");
   const meta = await sharp(input).metadata();
   const original = { width: meta.width ?? 0, height: meta.height ?? 0 };
@@ -119,7 +119,7 @@ export default function (pi: ExtensionAPI) {
         continue;
       }
 
-      const result = await compress(block);
+      const result = await compressImage(block);
       if (!result) {
         content.push(block);
         continue;
@@ -161,7 +161,7 @@ export default function (pi: ExtensionAPI) {
     const images: ImageContent[] = [];
     let changed = false;
     for (const image of event.images) {
-      const result = await compress(image);
+      const result = await compressImage(image);
       images.push(result?.block ?? image);
       changed ||= result !== null;
     }

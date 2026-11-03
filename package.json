@@ -3,16 +3,31 @@
   "version": "1.0.0",
   "description": "Compress images entering a Pi session to WebP before they are stored in conversation history.",
   "type": "module",
+  "license": "MIT",
+  "author": "butfool",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/butfool/pi-image-compress.git"
+  },
+  "homepage": "https://github.com/butfool/pi-image-compress#readme",
+  "bugs": {
+    "url": "https://github.com/butfool/pi-image-compress/issues"
+  },
   "keywords": [
     "pi-package",
     "pi-extension",
+    "pi",
+    "pi-coding-agent",
     "image",
+    "image-compression",
     "webp",
     "vision"
   ],
   "files": [
     "index.ts",
-    "README.md"
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
   ],
   "pi": {
     "extensions": [
@@ -26,12 +41,17 @@
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*"
   },
-  "scripts": {
-    "setup": "node tests/setup.mjs",
-    "pretypecheck": "node tests/setup.mjs",
-    "typecheck": "tsc --noEmit -p tests/tsconfig.json"
-  },
   "devDependencies": {
+    "@earendil-works/pi-ai": "^1.5.0",
+    "@earendil-works/pi-coding-agent": "^1.5.0",
+    "@types/node": "^26.6.6",
     "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tests/tsconfig.json",
+    "test": "node --test tests/compress.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }

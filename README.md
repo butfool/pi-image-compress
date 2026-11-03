@@ -1,24 +1,22 @@
 # pi-image-compress
 
-项目目录：`/Users/butcool/Code/OpenSource/PiExtensions/pi-image-compress`。
-
-扩展入口：`index.ts`。`package.json` 的 `pi.extensions` 声明入口，全局 `~/.pi/agent/settings.json` 的 `packages` 配置加载这个本地包。
+把进入 Pi 会话的图片在写进历史之前统一压成 WebP，让一个会话累积几十幅截图仍然能通过反向代理的请求体上限。
 
 ## 解决的问题
 
 Pi 会把工具结果里的图片（`read` 读取的截图、MCP 工具返回的图片、codemod `image()`）原样存进会话历史，并在**每一轮请求里重发整段历史**。一张 2000×1270 的 PNG 截图编码成 base64 是 593,000 字节，三十几幅就超过反向代理的请求体上限，请求被 413 拒绝；即使没触到上限，传输体积和首字节延迟也会随会话线性增长。
 
-这个扩展在图片进入上下文的入口把它们统一转成 WebP，并把尺寸与字节数压到模型视觉编码器实际可用的范围之外不浪费的水平。
+这个扩展在图片进入上下文的入口把它们统一转成 WebP，并把尺寸与字节数压到模型视觉编码器实际可用的范围之内。
 
 ## 安装
 
 ```bash
-pi install /Users/butcool/Code/OpenSource/PiExtensions/pi-image-compress
+pi install npm:pi-image-compress
 ```
 
-当前机器已配置全局加载。安装后执行 `/reload` 或重启 Pi。
+安装后执行 `/reload` 或重启 Pi。
 
-## 配套配置
+### 配套配置
 
 必须同时关闭 Pi 自己的图片处理，否则一张图会被编码两次（Pi 先出 PNG/JPEG，扩展再出 WebP）：
 
@@ -80,11 +78,21 @@ OpenAI 与 Anthropic 接受的图片格式白名单都止于 PNG、JPEG、GIF、
 
 扩展缺席（`pi -ne`、加载失败）时图片零压缩，请求体回到 593 KiB/幅的量级，约 26 幅就会撞上反向代理的上限并被 413 拒绝。这是有意的：压缩链路一旦断掉，问题以请求被拒的形式暴露，而不是静默发送一个更大的请求体。
 
+## 环境要求
+
+- Pi 1.5.0 或更新版本
+- Node.js 22 或更新版本
+
 ## 开发
 
 ```bash
 npm install
 npm run typecheck
+npm test
 ```
 
-`tests/setup.mjs` 会把当前 Pi 安装里的 `@earendil-works/pi-coding-agent`、`@earendil-works/pi-ai` 与 `@types` 链接到 `node_modules`，供 `tsc` 解析类型。
+`npm test` 用 `node --test` 直接运行 `tests/compress.test.mjs`，通过导出的 `compressImage` 与两个钩子的假 `ExtensionAPI` 验证：大图转 WebP 并落在字节上限内、小图原样透传、`tool_result` 的注解与格式改写、`input` 钩子的 transform 与 continue 分支。
+
+## License
+
+MIT
