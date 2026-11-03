@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.1] - 2026-11-03
+
+- Publish automatically on every push to `main` when the version is new, using npm trusted publishing with provenance.
+- Document the release flow.
+
 ## [1.0.0] - 2026-11-03
 
 - First public release on npm.

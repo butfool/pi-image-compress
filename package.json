@@ -1,6 +1,6 @@
 {
   "name": "pi-image-compress",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Compress images entering a Pi session to WebP before they are stored in conversation history.",
   "type": "module",
   "license": "MIT",

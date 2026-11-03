@@ -93,6 +93,18 @@ npm test
 
 `npm test` 用 `node --test` 直接运行 `tests/compress.test.mjs`，通过导出的 `compressImage` 与两个钩子的假 `ExtensionAPI` 验证：大图转 WebP 并落在字节上限内、小图原样透传、`tool_result` 的注解与格式改写、`input` 钩子的 transform 与 continue 分支。
 
+## 发布
+
+向 `main` 推送即触发发布。工作流使用 npm trusted publishing（OIDC）与 provenance，仓库里不保存任何 token。
+
+只有 `package.json` 的版本在 registry 上尚不存在时才会真正发布，因此普通提交不会产生新版本：
+
+```bash
+npm version patch --no-git-tag-version
+git commit -am "release: v1.0.1"
+git push
+```
+
 ## License
 
 MIT
