@@ -1,110 +1,180 @@
-# pi-image-compress
+<div align="center">
 
-把进入 Pi 会话的图片在写进历史之前统一压成 WebP，让一个会话累积几十幅截图仍然能通过反向代理的请求体上限。
+<h1>pi-image-compress</h1>
 
-## 解决的问题
+<p><strong>Re-encode every image that enters a Pi session to WebP before it lands in conversation history, so a screenshot-heavy session keeps fitting through your proxy.</strong></p>
 
-Pi 会把工具结果里的图片（`read` 读取的截图、MCP 工具返回的图片、codemod `image()`）原样存进会话历史，并在**每一轮请求里重发整段历史**。一张 2000×1270 的 PNG 截图编码成 base64 是 593,000 字节，三十几幅就超过反向代理的请求体上限，请求被 413 拒绝；即使没触到上限，传输体积和首字节延迟也会随会话线性增长。
+<p>Pi extension · Pi 1.5.0+ · Node.js 22.19+</p>
 
-这个扩展在图片进入上下文的入口把它们统一转成 WebP，并把尺寸与字节数压到模型视觉编码器实际可用的范围之内。
+<p>
+  <strong>English</strong> ·
+  <a href="README.zh-CN.md">简体中文</a>
+</p>
 
-## 安装
+[![npm](https://img.shields.io/npm/v/pi-image-compress?logo=npm&logoColor=white&label=npm&color=CB3837)](https://www.npmjs.com/package/pi-image-compress) [![Pi package](https://img.shields.io/badge/Pi-package-000000)](https://pi.dev/packages/pi-image-compress) [![License](https://img.shields.io/badge/license-MIT-3DA639?logo=opensourceinitiative&logoColor=white)](LICENSE) [![Node](https://img.shields.io/badge/node-22.19%2B-5FA04E?logo=nodedotjs&logoColor=white)](https://nodejs.org)
+
+</div>
+
+---
+
+## What is this
+
+Pi keeps every image that enters a session in the conversation history and resends that history on every turn. A screenshot returned by `read`, an image from an MCP tool, a picture pasted into the prompt: each one travels again with every request. A 2000×1270 PNG screenshot is 593,000 bytes once base64-encoded, and a session that collects a few dozen of them runs past the request-body limit of a reverse proxy, after which every request in that session comes back as a 413.
+
+`pi-image-compress` hooks the two points where images enter the context and re-encodes each one to WebP: scaled into a 1536×2048 box, quality stepped down until the base64 payload is at most 120 KiB. Images that are already small enough pass through untouched. Images already written to history stay as they are.
+
+Across 36 real UI screenshots, the stored images dropped from 19.50 MB to 2.35 MB, 64 KiB per image on average. A model's row-by-row transcription of a table from a compressed screenshot matched the original.
+
+## Features
+
+- Covers both entry points: images inside any tool result (`read`, MCP tools, `image()` in codemode) and images attached to a prompt (TUI paste, `@file`, RPC).
+- Fits images into 1536×2048 and tries WebP quality 82, 74, 66, 58, then 50 until the base64 payload is at most 120 KiB.
+- Passes images through byte for byte when they are inside the box and at most 30 KiB.
+- Adds the original dimensions and the coordinate multiplier to scaled tool-result images, so a click on the compressed image can be mapped back to the source.
+- Rewrites the `read` tool's `Read image file [image/png]` line to the format actually sent.
+- Throws when an image cannot be brought under the cap, so the failure shows up in Pi's extension errors.
+
+## Quick start
 
 ```bash
 pi install npm:pi-image-compress
 ```
 
-安装后执行 `/reload` 或重启 Pi。
-
-### 配套配置
-
-必须同时关闭 Pi 自己的图片处理，否则一张图会被编码两次（Pi 先出 PNG/JPEG，扩展再出 WebP）：
+Merge this into `~/.pi/agent/settings.json` so Pi stops resizing images on its own:
 
 ```json
-// ~/.pi/agent/settings.json
-"images": { "autoResize": false }
+{
+  "images": {
+    "autoResize": false
+  }
+}
 ```
 
-关闭之后 Pi 不做任何缩放与编码，扩展成为唯一编码器，一张图只经历一次有损压缩。
+Run `/reload` or restart Pi. Every image that enters the session from then on is compressed.
 
-## 行为
+> [!IMPORTANT]
+> With `images.autoResize` at its default `true`, Pi still runs its own image pipeline. On the `read` path, Pi resizes and re-encodes each screenshot before the `tool_result` hook fires, so the same image is encoded twice and the WebP pass starts from pixels Pi already resampled.
 
-挂两个钩子，覆盖图片进入上下文的两条路：
+## Install
 
-| 钩子 | 覆盖对象 |
-|---|---|
-| `tool_result` | 任何工具结果里的图片：`read`、MCP 工具、codemod `image()` |
-| `input` | 用户在 TUI 里手贴或 `@文件` 附加的图片 |
+### npm
 
-处理规则：
+```bash
+pi install npm:pi-image-compress
+```
 
-| 常量 | 值 | 说明 |
+### Try it without installing
+
+```bash
+pi -e npm:pi-image-compress
+```
+
+`-e` loads the package for one invocation and leaves the settings file alone.
+
+### From a local clone
+
+```bash
+git clone https://github.com/butfool/pi-image-compress.git
+cd pi-image-compress
+npm install
+pi install .
+```
+
+Local packages are loaded in place, so `npm install` provides `sharp` for the checkout.
+
+### Update and remove
+
+```bash
+pi update --extensions
+pi remove npm:pi-image-compress
+```
+
+`pi list` shows the packages currently configured.
+
+> [!NOTE]
+> Requires Pi 1.5.0 or newer and Node.js 22.19 or newer.
+
+## Configuration
+
+The extension has no settings of its own. The compression policy is fixed in `index.ts`:
+
+| Constant | Value | Effect |
 |---|---|---|
-| `MAX_WIDTH` / `MAX_HEIGHT` | 1536 / 2048 | 等比缩放到框内；宽度决定文字可读性，高度放宽以免竖屏截图被压成窄条 |
-| `QUALITIES` | 82 → 74 → 66 → 58 → 50 | 逐级下降直到落在字节上限内，截图通常停在 q82 |
-| `MAX_BASE64_BYTES` | 122880（120 KiB） | 单幅 base64 上限 |
-| `SMALL_BASE64_BYTES` | 30720（30 KiB） | 小于此值的图原样透传，避免重编码反而变大 |
+| `MAX_WIDTH` × `MAX_HEIGHT` | 1536 × 2048 | Scales each image into the box while keeping the aspect ratio. The width bound keeps text legible; the looser height bound keeps tall screenshots from collapsing into a narrow strip. |
+| `QUALITIES` | 82 → 74 → 66 → 58 → 50 | Tried in order at one size; the first WebP that fits the byte cap wins. UI screenshots usually stop at 82. |
+| `MAX_BASE64_BYTES` | 122880 (120 KiB) | Cap on the base64 payload of one image. When all five qualities overflow it, the dimensions shrink by 25% and the ladder runs again. |
+| `SMALL_BASE64_BYTES` | 30720 (30 KiB) | Images inside the box and at most this size are passed through, since re-encoding them can make them larger. |
 
-附加处理：
+`compressImage` and these constants are exported, so a fork can change the budget and assert it in tests.
 
-- 缩放后补一行 `[Image: original WxH, displayed at WxH. Multiply coordinates by N to map to original image.]`，让模型能把点击坐标换回原图；
-- 把 `read` 写入的 `Read image file [image/png]` 改写成实际的 `image/webp`；
-- 压不进字节上限时抛出错误，由 Pi 报扩展错误，让问题暴露，而不是把未压缩的图片发出去。
+## How it works
 
-## 为什么是 WebP
+Two hooks cover the paths images take:
 
-OpenAI 与 Anthropic 接受的图片格式白名单都止于 PNG、JPEG、GIF、WebP。AVIF 压缩率更低，但上游直接以 400 拒绝：
+| Hook | Covered images | What it does |
+|---|---|---|
+| `tool_result` | anything a tool returns: `read`, MCP tools, `image()` in codemode | Re-encodes image blocks, appends the dimension caption to scaled images, rewrites the `Read image file [...]` line |
+| `input` | images attached to a prompt: TUI paste, `@file` arguments, RPC calls | Re-encodes image blocks and returns `transform`; the prompt text is left alone |
+
+Per image:
+
+- Already WebP, inside the box, and at most 120 KiB: left untouched.
+- Inside the box and at most 30 KiB: left untouched.
+- Otherwise: scaled into the box and encoded through the quality ladder; when every quality overflows, the dimensions shrink by 25% and the ladder runs again.
+- When the output is smaller than the original, a text block follows the image: `[Image: original WxH, displayed at WxH. Multiply coordinates by N to map to original image.]`
+
+A compression failure throws. Pi logs the error against the extension and keeps the original image, so the request still goes out with the oversized payload.
+
+## Why WebP
+
+The vision APIs behind OpenAI and Anthropic accept a fixed set of formats: PNG, JPEG, GIF, and WebP. AVIF compresses further, and an upstream gateway rejects it outright:
 
 ```
 {"message":"... one of the supported image formats:
  ['image/jpeg', 'image/png', 'image/gif', 'image/webp']"}
 ```
 
-实测同一张 1536×975 的 UI 截图：WebP q82 为 66 KiB，AVIF q60 为 54 KiB，差距不足以换取格式风险。
+On a 1536×975 UI screenshot, WebP q82 measured 66 KiB against 54 KiB for AVIF q60. The 12 KiB gap does not cover the cost of a format the gateway may refuse.
 
-## 实测效果
+## Measured results
 
-同一批 36 张真实截图：
+A batch of 36 real screenshots, measured as the base64 payload stored in the session:
 
-| 方案 | 合计 | 平均 |
+| Pipeline | Total | Average |
 |---|---|---|
-| Pi 默认（2000 上限、PNG） | 19.50 MB | 529 KiB |
-| Pi 的 JPEG 路径（1536 上限、256 KiB） | 6.02 MB | 163 KiB |
-| 本扩展（1536 上限、WebP） | 2.35 MB | 64 KiB |
+| Pi default (2000 px box, PNG/JPEG at q80) | 19.50 MB | 529 KiB |
+| Pi with a 1536 px box and a 256 KiB JPEG cap | 6.02 MB | 163 KiB |
+| `pi-image-compress` (1536 px box, WebP) | 2.35 MB | 64 KiB |
 
-单张对比：593,000 字节 → 69,256 字节，模型对表格逐行转录的结果与原图完全一致。
+A single 2000×1270 screenshot went from 593,000 bytes to 69,256 bytes. The model's row-by-row transcription of a table in it matched the original.
 
-## 失败模式
+## Failure modes
 
-扩展缺席（`pi -ne`、加载失败）时图片零压缩，请求体回到 593 KiB/幅的量级，约 26 幅就会撞上反向代理的上限并被 413 拒绝。这是有意的：压缩链路一旦断掉，问题以请求被拒的形式暴露，而不是静默发送一个更大的请求体。
+- **Extension not loaded** (`pi -ne`, failed install): images pass through at full size and a session returns to the 413 pattern described above after a few dozen screenshots.
+- **Image cannot fit 120 KiB** at quality 50 after repeated downscaling: `compressImage` throws, Pi records an extension error, and the original image still enters the result. That request carries the full payload; the extension error is the only signal.
 
-## 环境要求
-
-- Pi 1.5.0 或更新版本
-- Node.js 22 或更新版本
-
-## 开发
+## Development
 
 ```bash
+git clone https://github.com/butfool/pi-image-compress.git
+cd pi-image-compress
 npm install
 npm run typecheck
 npm test
 ```
 
-`npm test` 用 `node --test` 直接运行 `tests/compress.test.mjs`，通过导出的 `compressImage` 与两个钩子的假 `ExtensionAPI` 验证：大图转 WebP 并落在字节上限内、小图原样透传、`tool_result` 的注解与格式改写、`input` 钩子的 transform 与 continue 分支。
+`npm test` runs `tests/compress.test.mjs` through `node --test`, which loads `index.ts` with Node's built-in type stripping. Six cases cover the exported `compressImage` and both hooks: a 2400×1600 PNG becomes a capped WebP scaled to 1536×1024, a small PNG passes through, the `tool_result` hook rewrites the image, the caption, and the format line, results without images are ignored, and the `input` hook returns `transform` for a large image and `continue` for a small one.
 
-## 发布
+### Release
 
-向 `main` 推送即触发发布。工作流使用 npm trusted publishing（OIDC）与 provenance，仓库里不保存任何 token。
-
-只有 `package.json` 的版本在 registry 上尚不存在时才会真正发布，因此普通提交不会产生新版本：
+Every push to `main` runs `.github/workflows/publish.yml`: typecheck, tests, then a registry check that publishes only when `package.json` names a version the registry does not have. Authentication uses npm trusted publishing (OIDC) with provenance; the repository stores no token.
 
 ```bash
 npm version patch --no-git-tag-version
-git commit -am "release: v1.0.1"
+git commit -am "release: v<version>"
 git push
 ```
 
 ## License
 
-MIT
+[MIT](LICENSE) © 2026 butfool
