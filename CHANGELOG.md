@@ -1,5 +1,9 @@
 # Changelog
 
+## [1.0.2] - 2026-11-05
+
+- Publish the rewritten English README, with a Chinese translation in `README.zh-CN.md`, to the npm registry and Pi package directory.
+
 ## [1.0.1] - 2026-11-03
 
 - Publish automatically on every push to `main` when the version is new, using npm trusted publishing with provenance.
